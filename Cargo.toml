@@ -2,6 +2,9 @@
 name = "xrw"
 version = "0.0.0"
 edition = "2024"
+description = "Structural I/O for binary formats."
+license = "MIT"
+repository = "https://github.com/ubmu/xrw"
 
 [dependencies]
 thiserror = "2.0.18"
