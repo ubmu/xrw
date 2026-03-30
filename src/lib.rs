@@ -68,7 +68,7 @@ pub mod marker;
 pub mod reader;
 pub mod structure;
 
-pub use block::Block;
+pub use block::{Block, BlockType};
 pub use descriptor::Descriptor;
 pub use family::Family;
 pub use kind::Kind;
