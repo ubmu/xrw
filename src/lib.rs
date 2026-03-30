@@ -55,6 +55,11 @@ list.
 - [`xver`](https://github.com/) — specification compliance checking for audio and video formats.
 */
 
+#![warn(clippy::pedantic)]
+// JUST FOR NOW UNTIL ALL FUNCTIONS ARE IMPLEMENTED
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 pub mod block;
 pub mod descriptor;
 pub mod family;
