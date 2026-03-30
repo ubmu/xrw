@@ -25,7 +25,6 @@ impl TryFrom<&Family> for Descriptor {
             Family::ResourceInterchangeX => Ok(Descriptor::INTERCHANGE),
             Family::ResourceInterchange64 => Ok(Descriptor::RESOURCE_INTERCHANGE),
             Family::Wave64 => Ok(Descriptor::WAVE_64),
-            _ => Err(Error::UnknownContainer),
         }
     }
 }
