@@ -1,4 +1,4 @@
-use crate::{Block, Descriptor, Error, Family, Marker, Reader, Result};
+use crate::{Block, BlockType, Descriptor, Error, Family, Marker, Reader, Result};
 use std::fmt;
 use std::io::{Read, Seek};
 
@@ -300,10 +300,12 @@ impl Structure {
 
             blocks.push(Block {
                 marker,
-                block_offset,
-                payload_offset,
-                payload_size,
-                payload_size_with_padding: payload_size + actual_pad,
+                block_type: BlockType::Original {
+                    block_offset,
+                    payload_offset,
+                    payload_size,
+                    payload_size_with_padding: payload_size + actual_pad,
+                },
             });
         }
 
@@ -493,7 +495,7 @@ impl Structure {
     /// structure.add_block(block);
     /// ```
     pub fn add_block(&mut self, block: Block) {
-        todo!()
+        self.blocks.push(block);
     }
 
     /// Inserts a block at the given index, shifting subsequent blocks.
@@ -501,8 +503,8 @@ impl Structure {
     /// ```
     /// structure.add_block_at(0, block);
     /// ```
-    pub fn add_block_at(&mut self, index: usize, block: Block) {
-        todo!()
+    pub fn insert_block(&mut self, index: usize, block: Block) {
+        self.blocks.insert(index, block);
     }
 
     /// Removes the first block matching the given marker.
