@@ -4,11 +4,8 @@ xrw
 
 Structural I/O for binary formats.
 
-Supported families include RIFF/IFF, QuickTime/ISOBMFF, PNG, JPEG, EBML/Matroska, FLAC, Ogg, TIFF/IFD, ASF, MXF, and more.
+`xrw` parses any block-based binary format into a uniform index of blocks without reading payloads, enabling fast querying and manipulation regardless of file size.
 
-Supported operations include reading and writing containers, block manipulation, finding and querying, padding and alignment, and container conversion. See the docs for the complete list.
+Currently supported families include RIFF, IFF, RF64, BW64, and Sony Wave64. Support for QuickTime/ISOBMFF, PNG, JPEG, EBML/Matroska, FLAC, Ogg, TIFF/IFD, ASF, MXF, and more is planned.
 
-
------
-
-A helper is provided for reading a block's raw payload by seeking to its stored offset.
+See the [documentation](https://docs.rs/xrw) for the complete API reference.
