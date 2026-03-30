@@ -415,7 +415,8 @@ impl Structure {
         reader: &mut Reader<R>,
         block: &Block,
     ) -> Result<Vec<u8>> {
-        todo!()
+        reader.seek(block.payload_offset)?;
+        Ok(reader.read_bytes(block.payload_size as usize)?)
     }
 
     /// Returns the first block matching the given marker, or `None` if not found.
@@ -424,7 +425,8 @@ impl Structure {
     /// let fmt = structure.find(Marker::FourCC(*b"fmt "));
     /// ```
     pub fn find(&self, marker: Marker) -> Option<&Block> {
-        todo!()
+        // TODO: Consider checking if marker type provided matches those in blocks.
+        self.blocks.iter().find(|block| block.marker == marker)
     }
 
     /// Returns all blocks matching the given marker.
@@ -433,17 +435,11 @@ impl Structure {
     /// let data_all = structure.find_all(Marker::FourCC(*b"data"));
     /// ```
     pub fn find_all(&self, marker: Marker) -> Vec<&Block> {
-        todo!()
+        self.blocks
+            .iter()
+            .filter(|block| block.marker == marker)
+            .collect()
     }
-
-    ///// Returns the block at the given index, or `None` if out of bounds.
-    /////
-    /////```
-    ///// let first = structure.find_at(0);
-    ///// ```
-    //pub fn find_at(&self, index: usize) -> Option<&Block> {
-    //    todo!()
-    //}
 
     /// Returns the index position of the first block matching the given marker, or `None` if not found.
     ///
@@ -451,7 +447,7 @@ impl Structure {
     /// let index = structure.position(Marker::FourCC(*b"bext"))
     /// ```
     pub fn position(&self, marker: Marker) -> Option<usize> {
-        todo!()
+        self.blocks.iter().position(|block| block.marker == marker)
     }
 
     /// Returns `true` if at least one block with the given marker exists.
@@ -460,7 +456,7 @@ impl Structure {
     /// if structure.contains(Marker::FourCC(*b"bext")) { ... }
     /// ```
     pub fn contains(&self, marker: Marker) -> bool {
-        todo!()
+        self.blocks.iter().any(|block| block.marker == marker)
     }
 
     /// Returns `true` if the block index is empty.
@@ -468,7 +464,7 @@ impl Structure {
     /// ```
     /// if structure.is_empty() { ... }
     pub fn is_empty(&self) -> bool {
-        todo!()
+        self.blocks.is_empty()
     }
 
     /// Returns `true` if the structure contains duplicate block markers.
@@ -476,17 +472,11 @@ impl Structure {
     /// ```
     /// if structure.has_duplicates() { ... }
     pub fn has_duplicates(&self) -> bool {
-        todo!()
+        self.blocks
+            .iter()
+            .enumerate()
+            .any(|(i, a)| self.blocks[i + 1..].iter().any(|b| b.marker == a.marker))
     }
-
-    ///// Returns the total number of indexed blocks.
-    /////
-    ///// ```
-    ///// let count = structure.block_count();
-    ///// ```
-    //pub fn block_count(&self) -> usize {
-    //    todo!()
-    //}
 
     /// Returns a slice of all indexed blocks.
     ///
@@ -494,7 +484,7 @@ impl Structure {
     /// for block in structure.blocks() { ... }
     /// ```
     pub fn blocks(&self) -> &[Block] {
-        todo!()
+        &self.blocks
     }
 
     /// Appends a block to the end of the block index.
@@ -521,7 +511,9 @@ impl Structure {
     /// structure.remove_block(Marker::FourCC(*b"LIST"));
     /// ```
     pub fn remove_block(&mut self, marker: Marker) {
-        todo!()
+        if let Some(index) = self.position(marker) {
+            self.blocks.remove(index);
+        }
     }
 
     /// Removes the block at the given index.
@@ -530,7 +522,7 @@ impl Structure {
     /// structure.remove_block_at(0);
     /// ```
     pub fn remove_block_at(&mut self, index: usize) {
-        todo!()
+        self.blocks.remove(index);
     }
 
     /// Removes all blocks matching the given marker.
@@ -539,7 +531,7 @@ impl Structure {
     /// structure.remove_all(Marker::FourCC(*b"LIST"));
     /// ```
     pub fn remove_all(&mut self, marker: Marker) {
-        todo!()
+        self.blocks.retain(|block| block.marker != marker);
     }
 
     /// Reorders blocks to match the given marker sequence.
@@ -560,7 +552,7 @@ impl Structure {
     /// structure.retain(|block| known.contains(&block.marker));
     /// ```
     pub fn retain<F: Fn(&Block) -> bool>(&mut self, predicate: F) {
-        todo!()
+        self.blocks.retain(|block| predicate(block));
     }
 
     /// Swaps two blocks by index.
@@ -569,7 +561,7 @@ impl Structure {
     /// structure.swap(0, 1);
     /// ```
     pub fn swap(&mut self, a: usize, b: usize) {
-        todo!()
+        self.blocks.swap(a, b);
     }
 
     /// Promotes the container to a 64-bit variant when the declared size exceeds [`u32::MAX`].
