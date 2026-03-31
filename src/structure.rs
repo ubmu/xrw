@@ -106,9 +106,6 @@ impl Structure {
             //kind,
             size,
         };
-
-        println!("{}", structure);
-
         Ok(structure)
     }
 
