@@ -374,7 +374,7 @@ impl Structure {
         let form = Self::read_marker(reader, descriptor)?;
 
         let ds64 = match marker {
-            Marker::FourCC(Self::MARK_RF64) | Marker::FourCC(Self::MARK_BW64) => {
+            Marker::RF64 | Marker::BW64 => {
                 let data_size = Self::parse_data_size_chunk(reader, descriptor)?;
                 if size == u32::MAX as u64 {
                     size = data_size.riff_size;
@@ -395,7 +395,7 @@ impl Structure {
     ) -> Result<DataSize64> {
         let _offset = reader.tell()?;
         let marker = Self::read_marker(reader, descriptor)?;
-        if marker != Marker::FourCC(Self::MARK_DS64) {
+        if marker != Marker::DS64 {
             // fix error msg
             return Err(Error::UnknownContainer);
             //return Err(Error::MalformedHeader);
