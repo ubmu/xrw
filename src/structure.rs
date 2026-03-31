@@ -67,17 +67,6 @@ pub struct Structure {
 }
 
 impl Structure {
-    const MARK_RIFF: [u8; 4] = *b"RIFF";
-    const MARK_RIFX: [u8; 4] = *b"RIFX";
-    const MARK_FFIR: [u8; 4] = *b"FFIR";
-    const MARK_RF64: [u8; 4] = *b"RF64";
-    const MARK_BW64: [u8; 4] = *b"BW64";
-    /// First four bytes of the Sony Wave64 container UUID.
-    /// W64 stores the FourCC in the first four bytes of its UUID identifier,
-    /// allowing detection without reading the full UUID.
-    const MARK_SW64: [u8; 4] = *b"riff";
-    const MARK_DS64: [u8; 4] = *b"ds64";
-
     /// Parses a binary file into a `Structure`, indexing all blocks without reading their payloads.
     ///
     /// ```
