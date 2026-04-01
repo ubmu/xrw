@@ -1,5 +1,17 @@
 use crate::Byteorder;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkerWidth {
+    FourCC,
+    UUID,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SizeWidth {
+    U32,
+    U64,
+}
+
 /// Describes the structural layout of a container family.
 ///
 /// The descriptor defines the properties required for reading any structured binary format.
@@ -14,9 +26,9 @@ pub struct Descriptor {
     /// This is subtracted when reading the payload size.
     pub header_overhead: u8,
     /// The size of the identifier field in bytes.
-    pub width_identifier: u8,
+    pub width_marker: MarkerWidth,
     /// The size of the payload size field in bytes.
-    pub width_payload_size: u8,
+    pub width_payload_size: SizeWidth,
 }
 
 impl Descriptor {
@@ -24,8 +36,8 @@ impl Descriptor {
         byteorder: Byteorder::Big,
         block_alignment: 2,
         header_overhead: 0,
-        width_identifier: 4,
-        width_payload_size: 4,
+        width_marker: MarkerWidth::FourCC,
+        width_payload_size: SizeWidth::U32,
     };
 
     pub const RESOURCE_INTERCHANGE: Self = Self {
@@ -37,7 +49,7 @@ impl Descriptor {
         byteorder: Byteorder::Little,
         block_alignment: 8,
         header_overhead: 24,
-        width_identifier: 16,
-        width_payload_size: 8,
+        width_marker: MarkerWidth::UUID,
+        width_payload_size: SizeWidth::U64,
     };
 }
