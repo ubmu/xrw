@@ -9,6 +9,9 @@ pub struct ReadOptions {
     /// it is a null byte before skipping, adding minor overhead but ensuring block indexing remains
     /// successful even when chunks are not correctly padded. Defaults to `true`.
     pub strict_alignment: bool,
+    /// When `true`, validates that payload sizes meet the minimum expected size for known markers.
+    /// When `false`, only checks that the size is non-zero and fits within the file. Defaults to `true'.
+    pub validate_minimum_payload_size: bool,
 }
 
 impl Default for ReadOptions {
@@ -16,6 +19,7 @@ impl Default for ReadOptions {
         Self {
             skip_duplicates: false,
             strict_alignment: true,
+            validate_minimum_payload_size: true,
         }
     }
 }
