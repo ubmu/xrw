@@ -1,3 +1,10 @@
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtendedData {
+    /// The 64-bit size metadata for RF64 and BW64 files.
+    DataSize64(DataSize64),
+    None,
+}
+
 /// The `ds64` chunk, required by RF64 and BW64 files.
 ///
 /// Stores the true 64-bit sizes of chunks whose size fields are set to [`u32::MAX`],
