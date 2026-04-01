@@ -40,9 +40,9 @@ impl TryFrom<Marker> for Family {
                 b"RF64" => Ok(Family::ResourceInterchange64),
                 b"BW64" => Ok(Family::ResourceInterchange64),
                 b"riff" => Ok(Family::Wave64),
-                _ => Err(Error::UnknownContainer),
+                _ => Err(Error::UnknownFamily),
             },
-            _ => Err(Error::UnknownContainer),
+            _ => Err(Error::UnknownFamily),
         }
     }
 }
