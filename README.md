@@ -1,6 +1,6 @@
 xrw
 ====
-Structural I/O for binary formats.
+This library provides structural I/O for binary formats.
 
 `xrw` parses any block-based binary format into a uniform index of blocks without reading payloads, enabling fast querying and manipulation regardless of file size.
 
