@@ -1,15 +1,15 @@
 use super::extension::ExtendedData;
 use super::parser::Parser;
 use crate::{
-    Block, BlockType, Descriptor, Family, Marker, ReadOptions, Reader, Result, WriteOptions,
+    Block, BlockType, Descriptor, Family, Kind, Marker, ReadOptions, Reader, Result, WriteOptions,
 };
 
 use std::fmt;
 use std::io::{Read, Seek};
 
-/// The parsed structure of a structured binary file.
+/// The parsed structure of a binary file.
 ///
-/// Contains a complete index of all blocks found in the stream, along with the
+/// Contains a complete index of all blocks found in the file, along with the
 /// detected container family, descriptor, and any family specific metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Structure {
@@ -19,9 +19,10 @@ pub struct Structure {
     pub descriptor: Descriptor,
     /// The detected container family.
     pub family: Family,
-    /// The size of the container payload in bytes.
+    /// The kind.
+    pub kind: Option<Kind>,
+    /// The size of the file in bytes.
     pub size: u64,
-    // pub kind: Option<Kind>,
     pub extension: ExtendedData,
 }
 
@@ -48,6 +49,9 @@ impl Structure {
     /// If the structure contains duplicate blocks, the caller is responsible for ensuring
     /// the correct block is passed. Use [`ReadOptions::skip_duplicates`] when reading to
     /// prevent duplicates from being indexed.
+    ///
+    /// If the block provided is of `BlockType::New` then this function will return a clone
+    /// of the payload.
     pub fn read_payload<R: Read + Seek>(
         &self,
         reader: &mut Reader<R>,
@@ -78,7 +82,7 @@ impl Structure {
     /// Returns the first block matching the given marker, or `None` if not found.
     ///
     /// ```
-    /// let fmt = structure.find(Marker::FourCC(*b"fmt "));
+    /// let fmt = structure.find(Marker::FMT);
     /// ```
     pub fn find(&self, marker: Marker) -> Option<&Block> {
         // TODO: Consider checking if marker type provided matches those in blocks.
@@ -88,7 +92,7 @@ impl Structure {
     /// Returns all blocks matching the given marker.
     ///
     ///```
-    /// let data_all = structure.find_all(Marker::FourCC(*b"data"));
+    /// let data_all = structure.find_all(Marker::DATA);
     /// ```
     pub fn find_all(&self, marker: Marker) -> Vec<&Block> {
         self.blocks
@@ -100,7 +104,7 @@ impl Structure {
     /// Returns the index position of the first block matching the given marker, or `None` if not found.
     ///
     /// ```
-    /// let index = structure.position(Marker::FourCC(*b"bext"))
+    /// let index = structure.position(Marker::BEXT)
     /// ```
     pub fn position(&self, marker: Marker) -> Option<usize> {
         self.blocks.iter().position(|block| block.marker == marker)
@@ -109,7 +113,7 @@ impl Structure {
     /// Returns `true` if at least one block with the given marker exists.
     ///
     /// ```
-    /// if structure.contains(Marker::FourCC(*b"bext")) { ... }
+    /// if structure.contains(Marker::LIST) { ... }
     /// ```
     pub fn contains(&self, marker: Marker) -> bool {
         self.blocks.iter().any(|block| block.marker == marker)
@@ -253,10 +257,9 @@ impl Structure {
 
 impl fmt::Display for Structure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // looks good enough. TODO: maybe come back to this when doing
-        // display for coreav
+        // TODO: Could use some improvements...
         writeln!(f, "header [family: {}, size: {}]", self.family, self.size)?;
-        if let Some(ref ds64) = self.ds64 {
+        if let ExtendedData::DataSize64(ref ds64) = self.extension {
             writeln!(
                 f,
                 "ds64   [riff_size: {}, data_size: {}, sample_count: {}]",
