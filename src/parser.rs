@@ -157,11 +157,11 @@ impl Parser {
         };
 
         loop {
-            if reader.tell()? >= eof {
+            let block_offset = reader.tell()?;
+            if block_offset >= eof {
                 break;
             }
 
-            let block_offset = reader.tell()?;
             let marker = match Self::read_marker(reader, descriptor) {
                 Ok(m) => m,
                 Err(_) => break,
