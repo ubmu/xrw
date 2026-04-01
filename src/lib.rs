@@ -50,9 +50,9 @@ querying, padding and alignment, and container conversion. See [`Structure`] for
 list.
 # Related
 
-- [`quickparse`](https://github.com/) — minimal essential chunk extraction for audio formats.
-- [`coreav`](https://github.com/) — comprehensive metadata reading and manipulation for audio and video formats.
-- [`xver`](https://github.com/) — specification compliance checking for audio and video formats.
+- [`quickparse`](https://github.com/) — Essential decoding information for multimedia formats..
+- [`mmeta`](https://github.com/) — Extensive multimedia metadata parsing..
+- [`xver`](https://github.com/) — Specification compliance checking for audio and video formats.
 */
 
 #![warn(clippy::pedantic)]
@@ -60,19 +60,24 @@ list.
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-pub mod block;
-pub mod descriptor;
-pub mod family;
-pub mod kind;
-pub mod marker;
-pub mod reader;
-pub mod structure;
+mod block;
+mod descriptor;
+mod extension;
+mod family;
+mod kind;
+mod marker;
+mod options;
+mod parser;
+mod reader;
+mod structure;
+//mod writer;
 
 pub use block::{Block, BlockType};
 pub use descriptor::Descriptor;
 pub use family::Family;
 pub use kind::Kind;
 pub use marker::Marker;
+pub use options::{ReadOptions, WriteOptions};
 pub use reader::Reader;
 pub use structure::Structure;
 
@@ -89,11 +94,29 @@ pub enum Error {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("unknown container")]
-    UnknownContainer,
-
     #[error("unexpected end of stream")]
-    UnexpectedEof,
+    UnexpectedEOF,
+
+    #[error("unknown family")]
+    UnknownFamily,
+
+    #[error("unknown kind")]
+    UnknownKind,
+
+    #[error("malformed header at offset {offset}")]
+    MalformedHeader { offset: u64 },
+
+    #[error("expected ds64 after header, not found")]
+    MissingDS64,
+
+    #[error("invalid block size: {offset}")]
+    InvalidBlockSize { offset: u64, size: u64 },
+
+    #[error("container promotion not supported for family {family}")]
+    InvalidPromotion { family: Family },
+
+    #[error("conversion from {from} to {to} is not supported")]
+    InvalidConversion { from: Family, to: Family },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
