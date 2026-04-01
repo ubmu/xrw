@@ -15,6 +15,7 @@ impl Marker {
     pub const RIFF: Self = Self::FourCC(*b"RIFF");
     pub const RIFX: Self = Self::FourCC(*b"RIFX");
     pub const FFIR: Self = Self::FourCC(*b"FFIR");
+    pub const XFIR: Self = Self::FourCC(*b"XFIR");
     pub const RF64: Self = Self::FourCC(*b"RF64");
     pub const BW64: Self = Self::FourCC(*b"BW64");
     /// Sony Wave64 stores the FourCC in the first four bytes of its UUID identifier,

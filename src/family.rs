@@ -7,7 +7,7 @@ pub enum Family {
     Interchange,
     /// Resource interchange file format (RIFF)
     ResourceInterchange,
-    /// Big-endian variant of RIFF
+    /// Big-endian variant of RIFF (RIFX, FFIR, XFIR)
     ResourceInterchangeX,
     /// 64-bit variant of RIFF
     ResourceInterchange64,
@@ -37,6 +37,8 @@ impl TryFrom<Marker> for Family {
                 b"FORM" => Ok(Family::Interchange),
                 b"RIFF" => Ok(Family::ResourceInterchange),
                 b"RIFX" => Ok(Family::ResourceInterchangeX),
+                b"FFIR" => Ok(Family::ResourceInterchangeX),
+                b"XFIR" => Ok(Family::ResourceInterchangeX),
                 b"RF64" => Ok(Family::ResourceInterchange64),
                 b"BW64" => Ok(Family::ResourceInterchange64),
                 b"riff" => Ok(Family::Wave64),
