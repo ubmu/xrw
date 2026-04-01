@@ -1,4 +1,7 @@
+use super::Kind;
 use super::extension::{DataSize64, ExtendedData};
+use crate::descriptor::MarkerWidth;
+use crate::descriptor::SizeWidth;
 use crate::{
     Block, BlockType, Descriptor, Error, Family, Marker, ReadOptions, Reader, Result, Structure,
 };
@@ -10,19 +13,18 @@ impl Parser {
     pub fn parse<R: Read + Seek>(reader: &mut Reader<R>, opts: &ReadOptions) -> Result<Structure> {
         let family = Self::detect_family(reader)?;
         let descriptor = Descriptor::try_from(&family)?;
-        let (_marker, size, _form, extension) = Self::parse_header(reader, &descriptor, &family)?;
-        // TODO: Figure out how to handle Kind as more formats are supported.
-        // let kind = Kind::try_from(form).ok();
+        let (_marker, size, form, extension) = Self::parse_header(reader, &descriptor, &family)?;
+        let kind = Kind::try_from(form).ok();
         let eof = Self::eof_offset(size, &family);
         let blocks = Self::index_blocks(reader, &descriptor, &family, &extension, eof, opts)?;
 
         let structure = Structure {
             blocks,
             descriptor,
-            extension,
             family,
-            //kind,
+            kind,
             size,
+            extension,
         };
         Ok(structure)
     }
@@ -38,7 +40,7 @@ impl Parser {
                 return Ok(family);
             }
         }
-        Err(Error::UnknownContainer)
+        Err(Error::UnknownFamily)
     }
 
     /// Identifies interchange variants by reading the first four magic bytes.
@@ -95,10 +97,9 @@ impl Parser {
         let _offset = reader.tell()?;
         let marker = Self::read_marker(reader, descriptor)?;
         if marker != Marker::DS64 {
-            // fix error msg
-            return Err(Error::UnknownContainer);
-            //return Err(Error::MalformedHeader);
+            return Err(Error::MissingDS64);
         }
+
         let _size = reader.read_u32(descriptor.byteorder)?;
         let riff_size = reader.read_u64(descriptor.byteorder)?;
         let data_size = reader.read_u64(descriptor.byteorder)?;
@@ -167,22 +168,50 @@ impl Parser {
             };
 
             let mut payload_size = Self::read_payload_size(reader, descriptor)?;
-
-            // RF64/BW64: if chunk size is `u32::MAX` then real size is in `ds64`.
+            // Override size with the 64-bit one stored in `ds64`.
             if payload_size == u32::MAX as u64 {
-                if let Some(ds64) = ds64 {
-                    payload_size = ds64.data_size;
+                if marker == Marker::DATA {
+                    if let ExtendedData::DataSize64(ds64) = extension {
+                        payload_size = ds64.data_size;
+                    } else {
+                        // Marker::DATA with u32::MAX size requires a ds64 chunk.
+                        return Err(Error::InvalidBlockSize {
+                            offset: reader.tell()?,
+                            size: payload_size,
+                        });
+                    }
+                } else {
+                    // Excluding Marker::DATA, chunks with u32::MAX sizes are either
+                    // unsupported RF64 table entries or simply invalid.
+                    return Err(Error::InvalidBlockSize {
+                        offset: reader.tell()?,
+                        size: payload_size,
+                    });
                 }
             }
 
+            // Determine the minimum required size for payload to be valid.
+            let minimum_size = if opts.validate_minimum_payload_size {
+                marker.minimum_payload_size()
+            } else {
+                1
+            };
+
             let payload_offset = reader.tell()?;
+            // Ensure the payload meets the required size and fits within the file.
+            if payload_size < minimum_size || payload_offset.saturating_add(payload_size) > eof {
+                return Err(Error::InvalidBlockSize {
+                    offset: payload_offset,
+                    size: payload_size,
+                });
+            }
+
             if opts.skip_duplicates && blocks.iter().any(|b| b.marker == marker) {
                 reader.seek(payload_offset + payload_size)?;
                 continue;
             }
 
             reader.seek(payload_offset + payload_size)?;
-
             // Chunk alignment in IFF-based formats requires chunks to be padded to an even-byte
             // boundary (or 8-byte for W64). Padding bytes SHOULD always be null (0x00) by specification.
             //
@@ -257,21 +286,17 @@ impl Parser {
         reader: &mut Reader<R>,
         descriptor: &Descriptor,
     ) -> Result<Marker> {
-        match descriptor.width_identifier {
-            4 => Ok(Marker::FourCC(reader.read_property_code()?)),
-            16 => Ok(Marker::UUID(reader.read_property_uuid()?)),
-            _ => Err(Error::UnknownContainer),
-            //_ => Err(Error::MalformedHeader),
+        match descriptor.width_marker {
+            MarkerWidth::FourCC => Ok(Marker::FourCC(reader.read_property_code()?)),
+            MarkerWidth::UUID => Ok(Marker::UUID(reader.read_property_uuid()?)),
         }
     }
 
     /// Reads a size field of the width defined by the descriptor.
     fn read_size<R: Read + Seek>(reader: &mut Reader<R>, descriptor: &Descriptor) -> Result<u64> {
         match descriptor.width_payload_size {
-            4 => Ok(reader.read_u32(descriptor.byteorder)? as u64),
-            8 => Ok(reader.read_u64(descriptor.byteorder)?),
-            _ => Err(Error::UnknownContainer),
-            //_ => Err(Error::MalformedHeader),
+            SizeWidth::U32 => Ok(reader.read_u32(descriptor.byteorder)? as u64),
+            SizeWidth::U64 => Ok(reader.read_u64(descriptor.byteorder)?),
         }
     }
 
@@ -280,10 +305,10 @@ impl Parser {
         reader: &mut Reader<R>,
         descriptor: &Descriptor,
     ) -> Result<u64> {
+        let offset = reader.tell()?;
         let size = Self::read_size(reader, descriptor)?;
         size.checked_sub(descriptor.header_overhead as u64)
-            .ok_or(Error::UnknownContainer)
-        //.ok_or(Error::InvalidBlockSize)
+            .ok_or(Error::InvalidBlockSize { offset, size })
     }
 
     /// The EOF offset.
