@@ -1,4 +1,4 @@
-use super::unique::DataSize64;
+use super::extension::{DataSize64, ExtendedData};
 use crate::{
     Block, BlockType, Descriptor, Error, Family, Marker, ReadOptions, Reader, Result, Structure,
 };
@@ -10,16 +10,16 @@ impl Parser {
     pub fn parse<R: Read + Seek>(reader: &mut Reader<R>, opts: &ReadOptions) -> Result<Structure> {
         let family = Self::detect_family(reader)?;
         let descriptor = Descriptor::try_from(&family)?;
-        let (_marker, size, _form, ds64) = Self::parse_header(reader, &family, &descriptor)?;
+        let (_marker, size, _form, extension) = Self::parse_header(reader, &descriptor, &family)?;
         // TODO: Figure out how to handle Kind as more formats are supported.
         // let kind = Kind::try_from(form).ok();
         let eof = Self::eof_offset(size, &family);
-        let blocks = Self::index_blocks(reader, &family, &descriptor, eof, opts, ds64.as_ref())?;
+        let blocks = Self::index_blocks(reader, &descriptor, &family, &extension, eof, opts)?;
 
         let structure = Structure {
             blocks,
             descriptor,
-            ds64,
+            extension,
             family,
             //kind,
             size,
@@ -50,9 +50,9 @@ impl Parser {
     /// Routes header parsing to the appropriate family-specific parser.
     fn parse_header<R: Read + Seek>(
         reader: &mut Reader<R>,
-        family: &Family,
         descriptor: &Descriptor,
-    ) -> Result<(Marker, u64, Marker, Option<DataSize64>)> {
+        family: &Family,
+    ) -> Result<(Marker, u64, Marker, ExtendedData)> {
         match family {
             Family::Interchange
             | Family::ResourceInterchange
@@ -67,23 +67,23 @@ impl Parser {
     fn parse_header_interchange<R: Read + Seek>(
         reader: &mut Reader<R>,
         descriptor: &Descriptor,
-    ) -> Result<(Marker, u64, Marker, Option<DataSize64>)> {
+    ) -> Result<(Marker, u64, Marker, ExtendedData)> {
         let marker = Self::read_marker(reader, descriptor)?;
         let mut size = Self::read_size(reader, descriptor)?;
         let form = Self::read_marker(reader, descriptor)?;
 
-        let ds64 = match marker {
+        let extension = match marker {
             Marker::RF64 | Marker::BW64 => {
-                let data_size = Self::parse_ds64(reader, descriptor)?;
+                let ds64 = Self::parse_ds64(reader, descriptor)?;
                 if size == u32::MAX as u64 {
-                    size = data_size.riff_size;
+                    size = ds64.riff_size;
                 }
-                Some(data_size)
+                ExtendedData::DataSize64(ds64)
             }
-            _ => None,
+            _ => ExtendedData::None,
         };
 
-        Ok((marker, size, form, ds64))
+        Ok((marker, size, form, extension))
     }
 
     /// Parses the `ds64` chunk required by RF64 and BW64 files, which stores the true
@@ -122,18 +122,20 @@ impl Parser {
     /// Routes block indexing to the appropriate family-specific parser.
     fn index_blocks<R: Read + Seek>(
         reader: &mut Reader<R>,
-        family: &Family,
         descriptor: &Descriptor,
+        family: &Family,
+        extension: &ExtendedData,
         eof: u64,
         opts: &ReadOptions,
-        ds64: Option<&DataSize64>,
     ) -> Result<Vec<Block>> {
         match family {
             Family::Interchange
             | Family::ResourceInterchange
             | Family::ResourceInterchangeX
             | Family::ResourceInterchange64
-            | Family::Wave64 => Self::index_blocks_interchange(reader, descriptor, eof, opts, ds64),
+            | Family::Wave64 => {
+                Self::index_blocks_interchange(reader, descriptor, extension, eof, opts)
+            }
         }
     }
 
@@ -142,11 +144,16 @@ impl Parser {
     fn index_blocks_interchange<R: Read + Seek>(
         reader: &mut Reader<R>,
         descriptor: &Descriptor,
+        extension: &ExtendedData,
         eof: u64,
         opts: &ReadOptions,
-        ds64: Option<&DataSize64>,
     ) -> Result<Vec<Block>> {
         let mut blocks: Vec<Block> = Vec::new();
+        let ds64 = if let ExtendedData::DataSize64(ds64) = extension {
+            Some(ds64)
+        } else {
+            None
+        };
 
         loop {
             if reader.tell()? >= eof {
@@ -279,7 +286,7 @@ impl Parser {
         //.ok_or(Error::InvalidBlockSize)
     }
 
-    /// The EOF offset..
+    /// The EOF offset.
     fn eof_offset(size: u64, family: &Family) -> u64 {
         let eof = match family {
             // Size excludes the 12-byte header fields (marker, size, form).
