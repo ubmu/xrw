@@ -4,15 +4,15 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     /// Interchange file format (EA IFF 85)
-    Interchange,
+    IFF,
     /// Resource interchange file format (RIFF)
-    ResourceInterchange,
+    RIFF,
     /// Big-endian variant of RIFF (RIFX, FFIR, XFIR)
-    ResourceInterchangeX,
+    RIFX,
     /// 64-bit variant of RIFF
-    ResourceInterchange64,
+    RF64,
     /// Sony Wave64, 64-bit variant of RIFF
-    Wave64,
+    SW64,
 }
 
 impl TryFrom<&Family> for Descriptor {
@@ -20,11 +20,9 @@ impl TryFrom<&Family> for Descriptor {
 
     fn try_from(family: &Family) -> Result<Self> {
         match family {
-            Family::Interchange => Ok(Descriptor::INTERCHANGE),
-            Family::ResourceInterchange => Ok(Descriptor::RESOURCE_INTERCHANGE),
-            Family::ResourceInterchangeX => Ok(Descriptor::INTERCHANGE),
-            Family::ResourceInterchange64 => Ok(Descriptor::RESOURCE_INTERCHANGE),
-            Family::Wave64 => Ok(Descriptor::WAVE_64),
+            Family::IFF | Family::RIFX => Ok(Descriptor::IFF),
+            Family::RIFF | Family::RF64 => Ok(Descriptor::RIFF),
+            Family::SW64 => Ok(Descriptor::SW64),
         }
     }
 }
@@ -34,14 +32,12 @@ impl TryFrom<Marker> for Family {
     fn try_from(marker: Marker) -> Result<Self> {
         match marker {
             Marker::FourCC(b) => match &b {
-                b"FORM" => Ok(Family::Interchange),
-                b"RIFF" => Ok(Family::ResourceInterchange),
-                b"RIFX" => Ok(Family::ResourceInterchangeX),
-                b"FFIR" => Ok(Family::ResourceInterchangeX),
-                b"XFIR" => Ok(Family::ResourceInterchangeX),
-                b"RF64" => Ok(Family::ResourceInterchange64),
-                b"BW64" => Ok(Family::ResourceInterchange64),
-                b"riff" => Ok(Family::Wave64),
+                b"FORM" => Ok(Family::IFF),
+                b"RIFF" => Ok(Family::RIFF),
+                b"RIFX" | b"FFIR" | b"XFIR" => Ok(Family::RIFX),
+                b"RF64" | b"BW64" => Ok(Family::RF64),
+                b"riff" => Ok(Family::SW64),
+
                 _ => Err(Error::UnknownFamily),
             },
             _ => Err(Error::UnknownFamily),
@@ -53,11 +49,11 @@ impl TryFrom<Marker> for Family {
 impl fmt::Display for Family {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Family::Interchange => write!(f, "IFF"),
-            Family::ResourceInterchange => write!(f, "RIFF"),
-            Family::ResourceInterchangeX => write!(f, "RIFX"),
-            Family::ResourceInterchange64 => write!(f, "RF64"),
-            Family::Wave64 => write!(f, "Wave64"),
+            Family::IFF => write!(f, "IFF"),
+            Family::RIFF => write!(f, "RIFF"),
+            Family::RIFX => write!(f, "RIFX"),
+            Family::RF64 => write!(f, "RF64"),
+            Family::SW64 => write!(f, "SW64"),
         }
     }
 }
