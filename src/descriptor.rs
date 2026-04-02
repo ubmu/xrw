@@ -32,7 +32,7 @@ pub struct Descriptor {
 }
 
 impl Descriptor {
-    pub const INTERCHANGE: Self = Self {
+    pub const IFF: Self = Self {
         byteorder: Byteorder::Big,
         block_alignment: 2,
         header_overhead: 0,
@@ -40,12 +40,12 @@ impl Descriptor {
         width_payload_size: SizeWidth::U32,
     };
 
-    pub const RESOURCE_INTERCHANGE: Self = Self {
+    pub const RIFF: Self = Self {
         byteorder: Byteorder::Little,
-        ..Self::INTERCHANGE
+        ..Self::IFF
     };
 
-    pub const WAVE_64: Self = Self {
+    pub const SW64: Self = Self {
         byteorder: Byteorder::Little,
         block_alignment: 8,
         header_overhead: 24,
