@@ -56,11 +56,9 @@ impl Parser {
         family: &Family,
     ) -> Result<(Marker, u64, Marker, ExtendedData)> {
         match family {
-            Family::Interchange
-            | Family::ResourceInterchange
-            | Family::ResourceInterchangeX
-            | Family::ResourceInterchange64
-            | Family::Wave64 => Self::parse_header_interchange(reader, descriptor),
+            Family::IFF | Family::RIFF | Family::RIFX | Family::RF64 | Family::SW64 => {
+                Self::parse_header_interchange(reader, descriptor)
+            }
         }
     }
 
@@ -130,11 +128,7 @@ impl Parser {
         opts: &ReadOptions,
     ) -> Result<Vec<Block>> {
         match family {
-            Family::Interchange
-            | Family::ResourceInterchange
-            | Family::ResourceInterchangeX
-            | Family::ResourceInterchange64
-            | Family::Wave64 => {
+            Family::IFF | Family::RIFF | Family::RIFX | Family::RF64 | Family::SW64 => {
                 Self::index_blocks_interchange(reader, descriptor, extension, eof, opts)
             }
         }
@@ -315,12 +309,9 @@ impl Parser {
     fn eof_offset(size: u64, family: &Family) -> u64 {
         let eof = match family {
             // Size excludes the 12-byte header fields (marker, size, form).
-            Family::Interchange
-            | Family::ResourceInterchange
-            | Family::ResourceInterchange64
-            | Family::ResourceInterchangeX => size + 12,
+            Family::IFF | Family::RIFF | Family::RIFX | Family::RF64 => size + 12,
             // Size includes the full container.
-            Family::Wave64 => size,
+            Family::SW64 => size,
         };
         eof
     }
