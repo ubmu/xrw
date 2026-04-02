@@ -22,6 +22,9 @@ impl Marker {
     /// allowing detection without reading the full UUID.
     pub const SW64: Self = Self::FourCC(*b"riff");
 
+    pub const AIFF: Self = Self::FourCC(*b"AIFF");
+    pub const AIFC: Self = Self::FourCC(*b"AIFC");
+
     // TODO: Figure out a general doc line for these.
 
     pub const WAVE: Self = Self::FourCC(*b"WAVE");
