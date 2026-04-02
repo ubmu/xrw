@@ -68,7 +68,7 @@ mod kind;
 mod marker;
 mod options;
 mod parser;
-mod reader;
+mod rw;
 mod structure;
 //mod writer;
 
@@ -78,7 +78,7 @@ pub use family::Family;
 pub use kind::Kind;
 pub use marker::Marker;
 pub use options::{ReadOptions, WriteOptions};
-pub use reader::Reader;
+pub use rw::Reader;
 pub use structure::Structure;
 
 use thiserror::Error;
