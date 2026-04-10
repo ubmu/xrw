@@ -1,17 +1,5 @@
 use crate::Byteorder;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MarkerWidth {
-    FourCC,
-    UUID,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SizeWidth {
-    U32,
-    U64,
-}
-
 /// Describes the structural layout of a container family.
 ///
 /// The descriptor defines the properties required for reading any structured binary format.
@@ -25,31 +13,34 @@ pub struct Descriptor {
     /// The number of block header bytes included in the size field value.
     /// This is subtracted when reading the payload size.
     pub header_overhead: u8,
+    /// The size of the header. This is just `marker_width` + `size_width`.
+    pub header_width: u8,
     /// The size of the identifier field in bytes.
-    pub width_marker: MarkerWidth,
+    pub marker_width: u8,
     /// The size of the payload size field in bytes.
-    pub width_payload_size: SizeWidth,
+    pub size_width: u8,
 }
 
 impl Descriptor {
-    pub const IFF: Self = Self {
-        byteorder: Byteorder::Big,
-        block_alignment: 2,
-        header_overhead: 0,
-        width_marker: MarkerWidth::FourCC,
-        width_payload_size: SizeWidth::U32,
-    };
+    pub const fn new(
+        byteorder: Byteorder,
+        block_alignment: u8,
+        header_overhead: u8,
+        marker_width: u8,
+        size_width: u8,
+    ) -> Self {
+        Self {
+            byteorder,
+            block_alignment,
+            header_overhead,
+            header_width: marker_width + size_width,
+            marker_width,
+            size_width,
+        }
+    }
 
-    pub const RIFF: Self = Self {
-        byteorder: Byteorder::Little,
-        ..Self::IFF
-    };
-
-    pub const SW64: Self = Self {
-        byteorder: Byteorder::Little,
-        block_alignment: 8,
-        header_overhead: 24,
-        width_marker: MarkerWidth::UUID,
-        width_payload_size: SizeWidth::U64,
-    };
+    // Self::new(Byteorder, block_alignment, header_overhead, marker_width, size_width)
+    pub const IFF: Self = Self::new(Byteorder::Big, 2, 0, 4, 4);
+    pub const RIFF: Self = Self::new(Byteorder::Little, 2, 0, 4, 4);
+    pub const SW64: Self = Self::new(Byteorder::Little, 8, 24, 16, 8);
 }
