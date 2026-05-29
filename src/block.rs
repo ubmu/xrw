@@ -1,110 +1,112 @@
-use crate::Marker;
 use std::fmt;
 
-/// The source of a block payload.
+use super::marker::Marker;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BlockType {
-    /// Block originated from the parsed stream.
+pub enum Source {
+    /// A block parsed from a stream.
     Original {
-        /// The absolute byte offset of the block header within the stream.
-        block_offset: u64,
-        /// The absolute byte offset of the payload within the stream.
+        offset: u64,
         payload_offset: u64,
-        /// The size of the payload in bytes, excluding any header or padding.
         payload_size: u64,
-        /// The size of the payload in bytes, including any padding.
-        payload_size_with_padding: u64,
+        padding: u64,
+        // sub_blocks: Vec<Block>,
     },
-    /// Block was provided by the user.
-    New { payload: Vec<u8> },
+    /// A block with a caller-provided payload.
+    Custom(Vec<u8>),
 }
 
-/// A single binary block.
+/// A block within a structured binary file.
+///
+/// A block is the fundamental unit of structured binary formats. Depending on
+/// the format, blocks may be referred to as chunks, atoms, elements, or boxes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
-    /// The identifying marker of this block.
+    /// The identifying marker for this block.
     pub marker: Marker,
-    pub block_type: BlockType,
+    /// The origin of a block.
+    pub source: Source,
 }
+
 impl Block {
-    /// Creates a new user-provided block with the given marker and payload.
-    ///
-    /// ```
-    /// let block = Block::new(Marker::FourCC(*b"bext"), payload_bytes);
-    /// ```
+    /// Creates a block with a custom payload to be inserted into a file.
     pub fn new(marker: Marker, payload: Vec<u8>) -> Self {
         Self {
             marker,
-            block_type: BlockType::New { payload },
+            source: Source::Custom(payload),
         }
     }
 
-    /// Returns the absolute byte offset of the block header within the stream,
-    /// or `None` if the block was provided by the user.
-    pub fn block_offset(&self) -> Option<u64> {
-        match &self.block_type {
-            BlockType::Original { block_offset, .. } => Some(*block_offset),
-            BlockType::New { .. } => None,
+    /// Returns `true` if this block was parsed from a stream.
+    pub fn is_original(&self) -> bool {
+        matches!(self.source, Source::Original { .. })
+    }
+
+    /// Returns `true` if this is a custom block.
+    pub fn is_custom(&self) -> bool {
+        matches!(self.source, Source::Custom(_))
+    }
+
+    /// Returns the offset of the block header within the stream,
+    /// or `None` if this block carries a custom payload.
+    pub fn offset(&self) -> Option<u64> {
+        match &self.source {
+            Source::Original { offset, .. } => Some(*offset),
+            Source::Custom { .. } => None,
         }
     }
 
-    /// Returns the absolute byte offset of the payload within the stream,
-    /// or `None` if the block was provided by the user.
+    /// Returns the offset of the block payload within the stream,
+    /// or `None` if this block carries a custom payload.
     pub fn payload_offset(&self) -> Option<u64> {
-        match &self.block_type {
-            BlockType::Original { payload_offset, .. } => Some(*payload_offset),
-            BlockType::New { .. } => None,
+        match &self.source {
+            Source::Original { payload_offset, .. } => Some(*payload_offset),
+            Source::Custom { .. } => None,
         }
     }
 
-    /// Returns the size of the payload in bytes, excluding any padding.
+    /// Returns the size of the payload in bytes.
     pub fn payload_size(&self) -> u64 {
-        match &self.block_type {
-            BlockType::Original { payload_size, .. } => *payload_size,
-            BlockType::New { payload } => payload.len() as u64,
+        match &self.source {
+            Source::Original { payload_size, .. } => *payload_size,
+            Source::Custom(payload) => payload.len() as u64,
         }
     }
 
-    /// Returns the size of the payload in bytes, including any padding.
-    /// If the block was provided by the user, this function will return `payload.len() as u64`.
-    pub fn payload_size_with_padding(&self) -> u64 {
-        match &self.block_type {
-            BlockType::Original {
-                payload_size_with_padding,
-                ..
-            } => *payload_size_with_padding,
-            BlockType::New { payload } => payload.len() as u64,
+    /// Returns the number of padding bytes following the block payload.
+    pub(crate) fn padding(&self) -> u64 {
+        match &self.source {
+            Source::Original { padding, .. } => *padding,
+            Source::Custom(..) => 0,
         }
     }
 
-    /// Returns `true` if this block was provided by the user rather than parsed from a stream.
-    pub fn is_new(&self) -> bool {
-        matches!(self.block_type, BlockType::New { .. })
+    /// Returns the custom payload bytes, or `None` if this block is original.
+    pub(crate) fn custom_payload(&self) -> Option<&[u8]> {
+        match &self.source {
+            Source::Original { .. } => None,
+            Source::Custom(payload) => Some(payload),
+        }
     }
 }
 
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.block_type {
-            BlockType::Original {
-                block_offset,
+        match &self.source {
+            Source::Original {
+                offset,
                 payload_offset,
                 payload_size,
                 ..
-            } => match self.marker {
-                Marker::FourCC(_) => write!(
+            } => {
+                write!(
                     f,
                     "{} [block: {}, payload: {}, size: {}]",
-                    self.marker, block_offset, payload_offset, payload_size
-                ),
-                Marker::UUID(_) => write!(
-                    f,
-                    "{}\n\t\t[block: {}, payload: {}, size: {}]",
-                    self.marker, block_offset, payload_offset, payload_size
-                ),
-            },
-            BlockType::New { payload } => {
-                write!(f, "{} [new, size: {}]", self.marker, payload.len())
+                    self.marker, offset, payload_offset, payload_size
+                )
+            }
+            Source::Custom(payload) => {
+                write!(f, "{} [owned, size: {}]", self.marker, payload.len())
             }
         }
     }
