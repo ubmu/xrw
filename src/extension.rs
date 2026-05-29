@@ -1,21 +1,20 @@
+/// Format specific data that extends the base container structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExtendedData {
-    /// The 64-bit size metadata for RF64 and BW64 files.
-    DataSize64(DataSize64),
-    None,
+pub enum Extension {
+    /// 64-bit size extension for RF64 and BW64 containers.
+    Ds64(Ds64),
 }
 
-/// The `ds64` chunk, required by RF64 and BW64 files.
+/// The `ds64` chunk, required in RF64 and BW64 files.
 ///
 /// Stores the true 64-bit sizes of chunks whose size fields are set to [`u32::MAX`],
 /// which is used as a sentinel value to indicate that the real size exceeds 32 bits.
 ///
 /// EBU Tech 3306-2007
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataSize64 {
-    pub _offset: u64,
-    /// Size of the `ds64` chunk payload in bytes.
-    pub _size: u32,
+pub struct Ds64 {
+    pub offset: u64,
+    pub size: u32,
     /// True size of the RIFF container, replacing the outer header size field.
     pub riff_size: u64,
     /// True size of the `data` chunk payload.
