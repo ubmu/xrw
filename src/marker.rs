@@ -1,8 +1,7 @@
-use crate::{Error, Result};
 use std::fmt;
 
-/// A block identifier marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Block identifier markers.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Marker {
     /// Four-character code (FourCC).
     FourCC([u8; 4]),
@@ -10,50 +9,70 @@ pub enum Marker {
     UUID([u8; 16]),
 }
 
-impl Marker {
-    //
-    pub const RIFF: Self = Self::FourCC(*b"RIFF");
-    pub const RIFX: Self = Self::FourCC(*b"RIFX");
-    pub const FFIR: Self = Self::FourCC(*b"FFIR");
-    pub const XFIR: Self = Self::FourCC(*b"XFIR");
-    pub const RF64: Self = Self::FourCC(*b"RF64");
-    pub const BW64: Self = Self::FourCC(*b"BW64");
-    /// Sony Wave64 stores the FourCC in the first four bytes of its UUID identifier,
-    /// allowing detection without reading the full UUID.
-    pub const SW64: Self = Self::FourCC(*b"riff");
+/// To initialize a unique marker, use the following format:
+///
+/// Marker::[TYPE](*b"...")
+///
+/// Example:
+///
+/// Marker::FourCC(*b"STYX")
+impl Marker {}
 
+/// Container marker constants.
+impl Marker {
+    /// Interchange File Format (IFF)
+    pub const FORM: Self = Self::FourCC(*b"FORM");
+    /// Resource Interchange File Format (RIFF)
+    pub const RIFF: Self = Self::FourCC(*b"RIFF");
+    /// RIFF big-endian variant.
+    pub const RIFX: Self = Self::FourCC(*b"RIFX");
+    /// Alternate RIFF big-endian variant.
+    pub const FFIR: Self = Self::FourCC(*b"FFIR");
+    /// Alternate RIFF big-endian variant.
+    pub const XFIR: Self = Self::FourCC(*b"XFIR");
+    /// RIFF 64-bit, superseded by BW64.
+    pub const RF64: Self = Self::FourCC(*b"RF64");
+    /// Broadcast Wave Format 64-bit.
+    pub const BW64: Self = Self::FourCC(*b"BW64");
+    /// Sony Wave64 uses UUIDs. The container UUID
+    /// leads with an intentional FourCC. This allows
+    /// for easier container detection.
+    pub const SW64: Self = Self::FourCC(*b"riff");
+}
+
+/// Form-type marker constants.
+impl Marker {
+    /// TODO: Document these.
     pub const AIFF: Self = Self::FourCC(*b"AIFF");
     pub const AIFC: Self = Self::FourCC(*b"AIFC");
-
-    // TODO: Figure out a general doc line for these.
-
     pub const WAVE: Self = Self::FourCC(*b"WAVE");
-    // Markers for RIFF chunks.
+}
+
+/// Block marker constants.
+impl Marker {
+    /// 64-bit size table for RF64 and BW64 containers ('ds64').
     pub const DS64: Self = Self::FourCC(*b"ds64");
+    /// Format parameters ('fmt ', note the trailing space).
     pub const FMT: Self = Self::FourCC(*b"fmt ");
-    pub const FMT_: Self = Self::FourCC(*b"fmt ");
+    /// Audio sample data ('data').
     pub const DATA: Self = Self::FourCC(*b"data");
+    /// Broadcast extension data ('bext').
     pub const BEXT: Self = Self::FourCC(*b"bext");
+    // IMPORTANT: HANDLE NESTED LATER.
     pub const LIST: Self = Self::FourCC(*b"LIST");
+}
 
-    pub fn minimum_payload_size(&self) -> u64 {
-        match self {
-            &Self::FMT => 16,
-            // TODO: See if there is a better default value.
-            // Set to 1 as we check if payload size is less than minimum size.
-            _ => 1,
-        }
+impl From<[u8; 4]> for Marker {
+    fn from(bytes: [u8; 4]) -> Self {
+        Self::FourCC(bytes)
     }
 }
 
-impl TryFrom<[u8; 4]> for Marker {
-    type Error = Error;
-    fn try_from(bytes: [u8; 4]) -> Result<Self> {
-        Ok(Marker::FourCC(bytes))
+impl From<[u8; 16]> for Marker {
+    fn from(bytes: [u8; 16]) -> Self {
+        Self::UUID(bytes)
     }
 }
-
-// impl TryFrom<[u8; 16]> for Marker {}
 
 impl fmt::Display for Marker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
