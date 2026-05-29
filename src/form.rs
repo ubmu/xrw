@@ -25,3 +25,13 @@ impl TryFrom<Marker> for Form {
         }
     }
 }
+
+impl From<Form> for Marker {
+    fn from(form: Form) -> Self {
+        match form {
+            Form::Wave => Marker::WAVE,
+            Form::Aiff => Marker::AIFF,
+            Form::Aifc => Marker::AIFC,
+        }
+    }
+}
