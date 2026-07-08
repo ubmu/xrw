@@ -4,7 +4,6 @@ use super::block::{Block, Source};
 use super::container::Container;
 use super::descriptor::Descriptor;
 use super::extension::*;
-use super::form::Form;
 use super::io::Reader;
 use super::layout::Layout;
 use super::marker::Marker;
