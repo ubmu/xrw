@@ -2,7 +2,7 @@
 name = "xrw"
 version = "0.0.1"
 edition = "2024"
-description = "Structural I/O for binary formats."
+description = "A general editor for structured binary formats."
 license = "MIT"
 repository = "https://github.com/ubmu/xrw"
 
