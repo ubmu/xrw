@@ -20,7 +20,7 @@ pub enum Container {
 }
 
 impl Container {
-    /// Detects the container format by reading the stream from the beginning.
+    /// Detects the container format by using file signatures.
     /// Returns [`Error::UnknownContainer`] if the format cannot be identified.
     pub(crate) fn detect<R: Read + Seek>(reader: &mut Reader<R>) -> Result<Self> {
         if let Ok(container) = Self::try_detect_interchange(reader) {
@@ -80,8 +80,6 @@ impl TryFrom<Marker> for Container {
     }
 }
 
-// TODO: figure out how I want to display container
-// Probably use long-form names.
 impl fmt::Display for Container {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
