@@ -1,87 +1,36 @@
 /*!
-A library for structural I/O across binary formats.
+A general editor library for structured binary formats.
 
-`xrw` treats any binary format whose data is organized into discrete, bounded units as a
-container. These units, whether called chunks, atoms, boxes, elements, pages, or frames,
-share a common shape: an identifying marker, a size, and a payload. The size may be stored
-explicitly in the block header, fixed by the format specification, or derivable from header
-fields. Regardless, `xrw` represents every unit as a [`Block`].
-
-# Approach
-
-Each container family is described by a [`Descriptor`], which stores byte order, identifier
-width, size field width, and alignment boundaries. All reading and writing behaviour is derived
-from this descriptor, making it straightforward to support new formats without changes to the
-core traversal logic.
-
-When given a stream, `xrw` reads the magic bytes to identify the container [`Family`] and,
-where the format specifies it, its [`Kind`]. From there, the container header is parsed and
-the stream is traversed block by block, recording each block's identifier, offset, payload
-offset, and size into a [`Structure`]. Payloads are not read or copied.
-
-The resulting [`Structure`] can be queried and manipulated freely. Reordering, removing, or
-swapping blocks operates only on the in-memory block index. Regardless of how large the file is,
-the cost of manipulation is negligible since no payload data is involved. Since every [`Block`]
-retains its absolute offset into the original stream, the block index acts as a complete description
-of what the output file should look like. To apply changes, [`Structure::write_from`] reads each
-payload directly from its stored offset and writes it to a new file in the current block order,
-handling size fields, padding, and alignment automatically.
-
-Currently supported container families include RIFF, IFF, RF64, BW64, and Sony Wave64.
-Support for QuickTime/ISOBMFF, PNG, JPEG, EBML/Matroska, FLAC, Ogg, TIFF/IFD, ASF, MXF,
-and more is planned.
-
-# Overview
-
-[`Structure`] is the primary struct, representing the parsed result of a binary file. It
-exposes the complete block index alongside the detected family, descriptor, and any
-family-specific metadata such as [`DataSize64`] for RF64 and BW64 files.
-```rust
-let mut reader = Reader::open("audio.wav")?;
-let structure = Structure::read(&mut reader, &ReadOptions::default())?;
-
-if let Some(fmt) = structure.find(Marker::FourCC(*b"fmt ")) {
-    let payload = structure.read_payload(&mut reader, fmt)?;
-}
-```
-
-Supported operations include reading and writing containers, block manipulation, finding and
-querying, padding and alignment, and container conversion. See [`Structure`] for the complete
-list.
-# Related
-
-- [`quickparse`](https://github.com/) — Essential decoding information for multimedia formats..
-- [`mmeta`](https://github.com/) — Extensive multimedia metadata parsing..
-- [`xver`](https://github.com/) — Specification compliance checking for audio and video formats.
+### Related
+- [`umedia`](https://github.com/ubmu/umedia) — Extensive multimedia metadata parsing and editing.
 */
-
 #![warn(clippy::pedantic)]
-// JUST FOR NOW UNTIL ALL FUNCTIONS ARE IMPLEMENTED
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
 mod block;
+mod builder;
+mod container;
 mod descriptor;
 mod extension;
-mod family;
-mod kind;
+mod io;
+mod layout;
 mod marker;
-mod options;
+mod opts;
 mod parser;
-mod rw;
-mod structure;
-//mod writer;
 
-pub use block::{Block, BlockType};
+pub use block::{Block, Source};
+pub use container::Container;
 pub use descriptor::Descriptor;
-pub use family::Family;
-pub use kind::Kind;
+pub use extension::{Ds64, Extension};
+pub use io::{Reader, Writer};
+pub use layout::Layout;
 pub use marker::Marker;
-pub use options::{ReadOptions, WriteOptions};
-pub use rw::Reader;
-pub use structure::Structure;
+pub use opts::{ReadOptions, WriteOptions};
 
-use thiserror::Error;
+pub mod prelude {
+    pub use super::{Block, Layout, Marker, ReadOptions, Reader, WriteOptions, Writer};
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Byteorder {
@@ -89,34 +38,41 @@ pub enum Byteorder {
     Little,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("io error: {0}")]
+    // parsing/probing errors.
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("A container could not be detected. The provided source is malformed or unsupported.")]
+    UnknownContainer,
+    #[error("An unsupported marker width was provided: {marker_width}")]
+    UnsupportedMarkerWidth { marker_width: u8 },
+    #[error("An ununsupported size width was provided: {size_width}")]
+    UnsupportedSizeWidth { size_width: u8 },
+    #[error("A size field was negative when there is zero reason it should at: {offset}")]
+    NegativeSize { offset: u64 },
+    #[error("The [`ds64`] chunk is required immediately after the RF64/BW64 master header: {got}")]
+    MissingDs64 { got: Marker },
+    #[error("Invalid block size {size} at {offset}")]
+    InvalidBlockSize { size: u64, offset: u64 },
 
-    #[error("unexpected end of stream")]
-    UnexpectedEOF,
+    // CAF errors that can occur when auto_fix is not set during writing.
+    #[error("Invalid file type for CAF: expected {expected} - got {got}")]
+    InvalidFileType { expected: Marker, got: Marker },
+    #[error("Invalid file version for CAF: expected {expected} - got {got}")]
+    InvalidFileVersion { expected: u8, got: u16 },
+    #[error("['desc'] must be the first block for CAF: expected {expected} - got {got}")]
+    InvalidFirstBlock { expected: Marker, got: Marker },
 
-    #[error("unknown family")]
-    UnknownFamily,
-
-    #[error("unknown kind")]
-    UnknownKind,
-
-    #[error("malformed header at offset {offset}")]
-    MalformedHeader { offset: u64 },
-
-    #[error("expected ds64 after header, not found")]
-    MissingDS64,
-
-    #[error("invalid block size: {offset}")]
-    InvalidBlockSize { offset: u64, size: u64 },
-
-    #[error("container promotion not supported for family {family}")]
-    InvalidPromotion { family: Family },
-
-    #[error("conversion from {from} to {to} is not supported")]
-    InvalidConversion { from: Family, to: Family },
+    // General writing errors.
+    #[error("A subtype is missing. This is required for writing certain containers.")]
+    MissingSubtype,
+    #[error("Container size exceeds `u32::MAX` and `auto_promote` is disabled")]
+    SizeOverflow,
+    #[error(
+        "The `Layout` contains `Source::Original` blocks which require a `Reader`. Try `write_from` instead."
+    )]
+    WrongWriteFunction,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
