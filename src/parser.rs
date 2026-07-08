@@ -1,10 +1,15 @@
 use std::io::{Read, Seek};
 
-use crate::block::{Block, Source};
-use crate::extension::*;
-use crate::form::Form;
-use crate::marker::Marker;
-use crate::{Container, Descriptor, Error, Layout, ReadOptions, Reader, Result};
+use super::block::{Block, Source};
+use super::container::Container;
+use super::descriptor::Descriptor;
+use super::extension::*;
+use super::form::Form;
+use super::io::Reader;
+use super::layout::Layout;
+use super::marker::Marker;
+use super::opts::ReadOptions;
+use crate::{Error, Result};
 
 pub(crate) struct Parser;
 
@@ -24,27 +29,35 @@ impl Parser {
         container: Container,
         opts: &ReadOptions,
     ) -> Result<Layout> {
+        // Derive descriptor from container.
         let descriptor = Descriptor::from(&container);
+
         // Reset the stream before probing.
         reader.seek(0)?;
-        match container {
-            Container::IFF
-            | Container::RIFF
-            | Container::RIFX
-            | Container::RF64
-            | Container::SW64 => Self::probe_interchange(reader, &container, &descriptor, opts),
-        }
+
+        // Probing is intentionally permissive and focuses only on extracting enough information
+        // to parse the file structure. Specification validation is  deferred to the `Builder`,
+        // which validates and repairs fields according to `WriteOptions` during writing.
+        Self::route_container_probe(reader, container, descriptor, opts)
     }
 
-    /// Returns the EOF offset for a given container and size.
-    fn end_offset(size: u64, container: &Container) -> u64 {
-        let end_offset = match container {
-            // Size excludes the 8-byte marker and size fields.
-            Container::IFF | Container::RIFF | Container::RIFX | Container::RF64 => size + 8,
-            // Size includes the full container.
-            Container::SW64 => size,
-        };
-        end_offset
+    /// Route to the container-specific probe function.
+    fn route_container_probe<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        container: Container,
+        descriptor: Descriptor,
+        opts: &ReadOptions,
+    ) -> Result<Layout> {
+        match container {
+            Container::Interchange
+            | Container::ResourceInterchange
+            | Container::ResourceInterchangeBE
+            | Container::ResourceInterchange64
+            | Container::SonyWave64 => {
+                Self::probe_interchange(reader, &container, &descriptor, opts)
+            }
+            Container::CoreAudio => Self::probe_coreaudio(reader, &container, &descriptor, opts),
+        }
     }
 
     /// Returns the minimum payload size for a given marker.
@@ -63,12 +76,17 @@ impl Parser {
         descriptor: &Descriptor,
         opts: &ReadOptions,
     ) -> Result<Layout> {
-        // The master chunk header follows the format: identifier, size, form type.
-        // The identifier determines the interchange variant, size covers the remaining
-        // container body (see end_offset), and form type identifies the file format.
+        // The master chunk header follows the format:
+
+        // The container identifying marker. This is either a FourCC or UUID.
         let master = reader.read_marker(descriptor)?;
+        // The number of remaining bytes in the container for all variants excluding Sony Wave64.
+        // This is the same as filesize + 8 bytes as this size value does not include the 4-byte
+        // FourCC identifying marker and the 4-byte size field.
+        // For Sony Wave64, this value is the filesize.
         let mut size = reader.read_size(descriptor)?;
-        let form = reader.read_marker(descriptor)?;
+        // The specific file or form type. This is either a FourCC or UUID.
+        let subtype = reader.read_marker(descriptor)?;
 
         // For 64-bit variants, parsing the 'ds64' chunk is required and needed later on.
         let extension = match master {
@@ -82,7 +100,7 @@ impl Parser {
             _ => None,
         };
 
-        let end_offset = Self::end_offset(size, container);
+        let end_offset = reader.size();
         let mut blocks: Vec<Block> = Vec::new();
 
         loop {
@@ -138,18 +156,21 @@ impl Parser {
             reader.seek(payload_offset + payload_size)?;
 
             // Chunk alignment in IFF-based formats requires chunks to be padded to an even-byte
-            // boundary (or 8-byte for W64). Padding bytes SHOULD always be null (0x00) by specification.
+            // boundary (or 8-byte for W64). The specification requires padding bytes to be null (0x00).
             //
-            // When `strict_alignment` is false, rather than blindly seeking past the calculated
+            // When `assume_strict_alignment` is false, rather than blindly seeking past the calculated
             // padding, the pad bytes are read and verified to be 0x00. If they are null, the
             // padding is accepted and the reader is already positioned at the next block. If any
             // byte is non-null, then the chunk was written without padding and the reader seeks back by
             // the pad amount and the next block is read from the unpadded position instead.
             //
-            // This approach handles the two most common cases: chunks incorrectly written without padding,
-            // and chunks correctly padded with null bytes. Chunks padded with non-null bytes are not handled.
+            // This approach handles the two most common cases: chunks that are correctly
+            // padded with null bytes and chunks that omit the required padding entirely.
+            //
+            // Chunks with incorrect (non-null) padding are treated as though no padding
+            // were present and are therefore not handled correctly.
             let pad = descriptor.padding_after(payload_size);
-            let actual_pad = if opts.strict_alignment {
+            let actual_pad = if opts.assume_strict_alignment {
                 reader.skip_padding(pad)?;
                 pad
             } else if reader.padding_valid(pad)? {
@@ -165,23 +186,121 @@ impl Parser {
             }
 
             blocks.push(Block {
-                marker,
+                marker: marker,
                 source: Source::Original {
                     offset: block_offset,
-                    payload_offset,
-                    payload_size,
+                    payload_offset: payload_offset,
+                    payload_size: payload_size,
                     padding: actual_pad,
                 },
             });
         }
 
         Ok(Layout {
-            blocks,
+            blocks: blocks,
             container: *container,
             descriptor: *descriptor,
-            form: Form::try_from(form).ok(),
-            size,
-            extension,
+            subtype: subtype,
+            size: size,
+            extension: extension,
+        })
+    }
+
+    fn probe_coreaudio<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        container: &Container,
+        descriptor: &Descriptor,
+        opts: &ReadOptions,
+    ) -> Result<Layout> {
+        // Reference:
+        // https://developer.apple.com/library/archive/documentation/MusicAudio/Reference/CAFSpec/CAF_spec/CAF_spec.html
+
+        // Semantic validation (for example, ensuring the file type and version match the CAF specification) is
+        // deferred to the `Builder`, which always validates or repairs these fields according to `WriteOptions`.
+
+        // The header follows the format:
+
+        // The file-type [FourCC] which must be 'caff'.
+        let _file_type = reader.read_marker(descriptor)?;
+        // The file version [u16] which must be set to 1.
+        let _file_version = reader.read_u16(descriptor.byteorder)?;
+        // The file flags [u16] which is reserved by the specification. Must be set to 0.
+        let _file_flags = reader.read_u16(descriptor.byteorder)?;
+
+        let header = CoreAudioHeader {
+            file_flags: _file_flags,
+            file_version: _file_version,
+        };
+
+        let extension = Extension::CoreAudioHeader(header);
+
+        // As a size value is not provided, we will default to reader.size()
+        let size = reader.size();
+
+        let mut blocks: Vec<Block> = Vec::new();
+
+        // The CAF specification requires the `desc` chunk to immediately follow the file header.
+        // Since probing only validates anything that can interfere with parsing, this requirement is not
+        // enforced here.
+        loop {
+            let offset = reader.tell()?;
+            if (offset + descriptor.header_width as u64) > size {
+                break;
+            }
+
+            let marker = reader.read_marker(descriptor)?;
+            let raw_payload_size = reader.read_i64(descriptor.byteorder)?;
+            let payload_offset = reader.tell()?;
+
+            // Valid for ['data']: payload extends to EOF.
+            let payload_size = if raw_payload_size == -1 {
+                if marker != Marker::DATA {
+                    return Err(Error::NegativeSize {
+                        offset: payload_offset,
+                    });
+                }
+                reader.size() - payload_offset
+            } else {
+                raw_payload_size as u64
+            };
+
+            let minimum_size = if opts.validate_minimum_payload_size {
+                Self::minimum_payload_size(marker)
+            } else {
+                0
+            };
+
+            if payload_size < minimum_size || payload_offset.saturating_add(payload_size) > size {
+                return Err(Error::InvalidBlockSize {
+                    offset: payload_offset,
+                    size: payload_size,
+                });
+            }
+
+            reader.seek(payload_offset + payload_size)?;
+
+            if opts.skip_duplicates && blocks.iter().any(|b| b.marker == marker) {
+                continue;
+            }
+
+            blocks.push(Block {
+                marker: marker,
+                source: Source::Original {
+                    offset: offset,
+                    payload_offset: payload_offset,
+                    payload_size: payload_size,
+                    padding: 0,
+                },
+            });
+        }
+
+        Ok(Layout {
+            blocks: blocks,
+            container: *container,
+            descriptor: *descriptor,
+            subtype: Marker::CAFF,
+            size: size,
+            extension: Some(extension),
         })
     }
 
@@ -189,7 +308,7 @@ impl Parser {
         let offset = reader.tell()?;
         let marker = reader.read_marker(descriptor)?;
         if marker != Marker::DS64 {
-            return Err(Error::MissingDS64);
+            return Err(Error::MissingDs64 { got: marker });
         }
 
         let size = reader.read_u32(descriptor.byteorder)?;
@@ -204,11 +323,11 @@ impl Parser {
         }
 
         Ok(Ds64 {
-            offset,
-            size,
-            riff_size,
-            data_size,
-            sample_count,
+            offset: offset,
+            size: size,
+            riff_size: riff_size,
+            data_size: data_size,
+            sample_count: sample_count,
         })
     }
 }
