@@ -30,7 +30,7 @@ pub struct Block {
 
 impl Block {
     /// Creates a block with a custom payload to be inserted into a file.
-    pub fn new(marker: Marker, payload: Vec<u8>) -> Self {
+    pub fn custom(marker: Marker, payload: Vec<u8>) -> Self {
         Self {
             marker,
             source: Source::Custom(payload),
@@ -82,7 +82,7 @@ impl Block {
     }
 
     /// Returns the custom payload bytes, or `None` if this block is original.
-    pub(crate) fn custom_payload(&self) -> Option<&[u8]> {
+    pub(crate) fn raw_payload(&self) -> Option<&[u8]> {
         match &self.source {
             Source::Original { .. } => None,
             Source::Custom(payload) => Some(payload),
@@ -106,7 +106,7 @@ impl fmt::Display for Block {
                 )
             }
             Source::Custom(payload) => {
-                write!(f, "{} [owned, size: {}]", self.marker, payload.len())
+                write!(f, "{} [custom, size: {}]", self.marker, payload.len())
             }
         }
     }
