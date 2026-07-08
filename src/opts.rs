@@ -9,13 +9,16 @@ pub struct ReadOptions {
     /// Defaults to `false`.
     pub skip_duplicates: bool,
 
-    /// Controls how block alignment padding is handled.
+    /// Assumes the file strictly follows the format's alignment requirements.
     ///
-    /// When enabled, the parser assumes all blocks are correctly aligned and
-    /// skips padding bytes without validation.
+    /// When enabled, the parser skips the expected alignment padding without verifying
+    /// that the padding bytes are present and contain the format's required padding bytes.
     ///
-    /// When disabled, the parser verifies the padding bytes before skipping it.
-    /// This adds a small amount of overhead but allows indexing to succeed even when alignment padding is malformed.
+    /// When disabled, the parser verifies the expected padding bytes before
+    /// skipping them. If the expected padding is not present, parsing continues
+    /// as though the chunk were written without padding.
+    ///
+    /// Disable this option when attempting to probe files that are not padded correctly.
     ///
     /// Defaults to `true`.
     pub assume_strict_alignment: bool,
