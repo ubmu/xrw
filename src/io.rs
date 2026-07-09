@@ -152,6 +152,14 @@ impl<R: Read + Seek> Reader<R> {
         if pad == 0 {
             return Ok(true);
         }
+
+        let pos = self.tell()?;
+
+        // Not enough bytes left in the file to contain padding.
+        if self.size() - pos < pad {
+            return Ok(false);
+        }
+
         let bytes = self.read_bytes(pad as usize)?;
         let is_padding = bytes.iter().all(|&b| b == 0x00);
         Ok(is_padding)
