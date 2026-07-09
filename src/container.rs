@@ -72,6 +72,7 @@ impl TryFrom<Marker> for Container {
                 b"RIFX" | b"FFIR" | b"XFIR" => Ok(Container::ResourceInterchangeBE),
                 b"RF64" | b"BW64" => Ok(Container::ResourceInterchange64),
                 b"riff" => Ok(Container::SonyWave64),
+                b"caff" => Ok(Container::CoreAudio),
 
                 _ => Err(Error::UnknownContainer),
             },
