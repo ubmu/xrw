@@ -13,7 +13,6 @@ use crate::{Error, Result};
 pub(crate) struct Parser;
 
 impl Parser {
-    /// Probes a reader, detecting the container automatically.
     pub(crate) fn from_reader<R: Read + Seek>(
         reader: &mut Reader<R>,
         opts: &ReadOptions,
@@ -22,7 +21,6 @@ impl Parser {
         Self::from_reader_as(reader, container, opts)
     }
 
-    /// Probes a reader with a known container, skipping detection.
     pub(crate) fn from_reader_as<R: Read + Seek>(
         reader: &mut Reader<R>,
         container: Container,
@@ -30,17 +28,14 @@ impl Parser {
     ) -> Result<Layout> {
         // Derive descriptor from container.
         let descriptor = Descriptor::from(&container);
-
         // Reset the stream before probing.
         reader.seek(0)?;
-
         // Probing is intentionally permissive and focuses only on extracting enough information
         // to parse the file structure. Specification validation is  deferred to the `Builder`,
         // which validates and repairs fields according to `WriteOptions` during writing.
         Self::route_container_probe(reader, container, descriptor, opts)
     }
 
-    /// Route to the container-specific probe function.
     fn route_container_probe<R: Read + Seek>(
         reader: &mut Reader<R>,
         container: Container,
@@ -58,13 +53,34 @@ impl Parser {
             Container::CoreAudio => Self::probe_coreaudio(reader, &container, &descriptor, opts),
         }
     }
+}
 
-    /// Returns the minimum payload size for a given marker.
+impl Parser {
     fn minimum_payload_size(marker: Marker) -> u64 {
         match marker {
             Marker::FMT => 16,
             _ => 0,
         }
+    }
+
+    fn ensure_minimum_payload_size(
+        size: u64,
+        payload_offset: u64,
+        payload_size: u64,
+        minimum_size: u64,
+        opts: &ReadOptions,
+    ) -> Result<()> {
+        // Determine the minimum required size for payload to be valid.
+        let minimum_size = if opts.validate_minimum_payload_size { minimum_size } else { 0 };
+        // Ensure payload meets the required size and fits within the file.
+        if payload_size < minimum_size || payload_offset.saturating_add(payload_size) > size {
+            return Err(Error::InvalidBlockSize {
+                offset: payload_offset,
+                size: payload_size,
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -76,7 +92,6 @@ impl Parser {
         opts: &ReadOptions,
     ) -> Result<Layout> {
         // The master chunk header follows the format:
-
         // The container identifying marker. This is either a FourCC or UUID.
         let master = reader.read_marker(descriptor)?;
         // The number of remaining bytes in the container for all variants excluding Sony Wave64.
@@ -86,7 +101,6 @@ impl Parser {
         let mut size = reader.read_size(descriptor)?;
         // The specific file or form type. This is either a FourCC or UUID.
         let subtype = reader.read_marker(descriptor)?;
-
         // For 64-bit variants, parsing the 'ds64' chunk is required and needed later on.
         let extension = match master {
             Marker::RF64 | Marker::BW64 => {
@@ -99,13 +113,21 @@ impl Parser {
             _ => None,
         };
 
-        let end_offset = reader.size();
+        let size = match container {
+            Container::Interchange
+            | Container::ResourceInterchange
+            | Container::ResourceInterchangeBE
+            | Container::ResourceInterchange64 => size + 8,
+            Container::SonyWave64 => size,
+            _ => unreachable!(),
+        };
+
         let mut blocks: Vec<Block> = Vec::new();
 
         loop {
             let block_offset = reader.tell()?;
             // Break if there is not enough room for a chunk header.
-            if (block_offset + descriptor.header_width as u64) > end_offset {
+            if (block_offset + descriptor.header_width as u64) > size {
                 break;
             }
 
@@ -133,27 +155,16 @@ impl Parser {
                 }
             }
 
-            // Determine the minimum required size for payload to be valid.
-            let minimum_size = if opts.validate_minimum_payload_size {
-                Self::minimum_payload_size(marker)
-            } else {
-                0
-            };
-
             let payload_offset = reader.tell()?;
-
-            // Ensure payload meets the required size and fits within the file.
-            if payload_size < minimum_size
-                || payload_offset.saturating_add(payload_size) > end_offset
-            {
-                return Err(Error::InvalidBlockSize {
-                    offset: payload_offset,
-                    size: payload_size,
-                });
-            }
+            Self::ensure_minimum_payload_size(
+                size,
+                payload_offset,
+                payload_size,
+                Self::minimum_payload_size(marker),
+                opts,
+            );
 
             reader.seek(payload_offset + payload_size)?;
-
             // Chunk alignment in IFF-based formats requires chunks to be padded to an even-byte
             // boundary (or 8-byte for W64). The specification requires padding bytes to be null (0x00).
             //
@@ -179,7 +190,6 @@ impl Parser {
                 0
             };
 
-            // Skip duplicates by not adding them to block vector.
             if opts.skip_duplicates && blocks.iter().any(|block| block.marker == marker) {
                 continue;
             }
@@ -199,12 +209,25 @@ impl Parser {
             blocks: blocks,
             container: *container,
             descriptor: *descriptor,
-            subtype: subtype,
+            subtype: Some(subtype),
             size: size,
             extension: extension,
         })
     }
 
+    fn parse_ds64<R: Read + Seek>(reader: &mut Reader<R>, descriptor: &Descriptor) -> Result<Ds64> {
+        let marker = reader.read_marker(descriptor)?;
+        // TODO: Some RF64/BW64 files do not have a `ds64`, but also do not have sizes exceeding `u32::MAX`.
+        // Perhaps lessen the constraints here.
+        if marker != Marker::DS64 {
+            return Err(Error::MissingDs64 { got: marker });
+        }
+
+        Ds64::read(reader, descriptor.byteorder)
+    }
+}
+
+impl Parser {
     fn probe_coreaudio<R: Read + Seek>(
         reader: &mut Reader<R>,
         container: &Container,
@@ -214,11 +237,7 @@ impl Parser {
         // Reference:
         // https://developer.apple.com/library/archive/documentation/MusicAudio/Reference/CAFSpec/CAF_spec/CAF_spec.html
 
-        // Semantic validation (for example, ensuring the file type and version match the CAF specification) is
-        // deferred to the `Builder`, which always validates or repairs these fields according to `WriteOptions`.
-
         // The header follows the format:
-
         // The file-type [FourCC] which must be 'caff'.
         let _file_type = reader.read_marker(descriptor)?;
         // The file version [u16] which must be set to 1.
@@ -232,12 +251,10 @@ impl Parser {
         };
 
         let extension = Extension::CoreAudioHeader(header);
-
         // As a size value is not provided, we will default to reader.size()
         let size = reader.size();
 
         let mut blocks: Vec<Block> = Vec::new();
-
         // The CAF specification requires the `desc` chunk to immediately follow the file header.
         // Since probing only validates anything that can interfere with parsing, this requirement is not
         // enforced here.
@@ -263,21 +280,15 @@ impl Parser {
                 raw_payload_size as u64
             };
 
-            let minimum_size = if opts.validate_minimum_payload_size {
-                Self::minimum_payload_size(marker)
-            } else {
-                0
-            };
-
-            if payload_size < minimum_size || payload_offset.saturating_add(payload_size) > size {
-                return Err(Error::InvalidBlockSize {
-                    offset: payload_offset,
-                    size: payload_size,
-                });
-            }
+            Self::ensure_minimum_payload_size(
+                size,
+                payload_offset,
+                payload_size,
+                Self::minimum_payload_size(marker),
+                opts,
+            );
 
             reader.seek(payload_offset + payload_size)?;
-
             if opts.skip_duplicates && blocks.iter().any(|b| b.marker == marker) {
                 continue;
             }
@@ -297,36 +308,15 @@ impl Parser {
             blocks: blocks,
             container: *container,
             descriptor: *descriptor,
-            subtype: Marker::CAFF,
+            subtype: None,
             size: size,
             extension: Some(extension),
         })
     }
+}
 
-    fn parse_ds64<R: Read + Seek>(reader: &mut Reader<R>, descriptor: &Descriptor) -> Result<Ds64> {
-        let offset = reader.tell()?;
-        let marker = reader.read_marker(descriptor)?;
-        if marker != Marker::DS64 {
-            return Err(Error::MissingDs64 { got: marker });
-        }
-
-        let size = reader.read_u32(descriptor.byteorder)?;
-        let riff_size = reader.read_u64(descriptor.byteorder)?;
-        let data_size = reader.read_u64(descriptor.byteorder)?;
-        let sample_count = reader.read_u64(descriptor.byteorder)?;
-        let table_length = reader.read_u32(descriptor.byteorder)?;
-        // NOTE: The table entries track 64-bit sizes for non-data chunks, but no standard
-        // chunk other than `data` is realistically expected to exceed 4GB, so they are skipped.
-        if table_length > 0 {
-            reader.skip(table_length as u64 * 12)?;
-        }
-
-        Ok(Ds64 {
-            offset: offset,
-            size: size,
-            riff_size: riff_size,
-            data_size: data_size,
-            sample_count: sample_count,
-        })
+impl Parser {
+    fn t() -> _ {
+        todo!()
     }
 }

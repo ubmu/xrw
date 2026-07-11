@@ -8,8 +8,8 @@ A general editor library for structured binary formats.
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+mod assembler;
 mod block;
-mod builder;
 mod container;
 mod descriptor;
 mod extension;

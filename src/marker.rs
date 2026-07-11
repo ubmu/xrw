@@ -38,9 +38,11 @@ impl Marker {
     /// leads with an intentional FourCC. This allows
     /// for easier container detection.
     pub const SW64: Self = Self::FourCC(*b"riff");
+    // Core Audio Format.
+    pub const CAFF: Self = Self::FourCC(*b"caff");
 }
 
-/// Form-type marker constants.
+/// Subtype marker constants.
 impl Marker {
     /// TODO: Document these.
     pub const AIFF: Self = Self::FourCC(*b"AIFF");
@@ -60,6 +62,8 @@ impl Marker {
     pub const BEXT: Self = Self::FourCC(*b"bext");
     // IMPORTANT: HANDLE NESTED LATER.
     pub const LIST: Self = Self::FourCC(*b"LIST");
+
+    pub const DESC: Self = Self::FourCC(*b"desc");
 }
 
 impl From<[u8; 4]> for Marker {
