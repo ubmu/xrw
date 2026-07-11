@@ -66,12 +66,12 @@ impl Descriptor {
         size_width: u8,
     ) -> Self {
         Self {
-            byteorder,
-            alignment,
-            header_overhead,
+            byteorder: byteorder,
+            alignment: alignment,
+            header_overhead: header_overhead,
             header_width: marker_width + size_width,
-            marker_width,
-            size_width,
+            marker_width: marker_width,
+            size_width: size_width,
         }
     }
 
