@@ -1,3 +1,8 @@
+use std::io::{Read, Seek};
+
+use super::io::Reader;
+use crate::{Byteorder, Result};
+
 /// Format specific data that extends the base container structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Extension {
@@ -23,6 +28,31 @@ pub struct Ds64 {
     pub data_size: u64,
     /// True sample count, replacing the value in the `fact` chunk.
     pub sample_count: u64,
+}
+
+impl Ds64 {
+    pub(crate) fn read<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        byteorder: Byteorder,
+    ) -> Result<Self> {
+        // Account for the marker read.
+        let offset = reader.tell()? - 4;
+        let size = reader.read_u32(byteorder)?;
+        let riff_size = reader.read_u64(byteorder)?;
+        let data_size = reader.read_u64(byteorder)?;
+        let sample_count = reader.read_u64(byteorder)?;
+        let table_length = reader.read_u32(byteorder)?;
+        if table_length > 0 {
+            reader.skip(table_length as u64 * 12)?;
+        }
+        Ok(Self {
+            offset,
+            size,
+            riff_size,
+            data_size,
+            sample_count,
+        })
+    }
 }
 
 /// The header for CAF.
