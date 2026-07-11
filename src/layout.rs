@@ -24,8 +24,8 @@ pub struct Layout {
     pub descriptor: Descriptor,
     /// The detected container family.
     pub container: Container,
-    /// The specific file-type or format.
-    pub subtype: Marker,
+    /// The specific file-type or format. If set to `None`, the file-type is stored in `layout.container`.
+    pub subtype: Option<Marker>,
     /// The size of the file in bytes.
     pub size: u64,
     /// Any extra data that is required.
