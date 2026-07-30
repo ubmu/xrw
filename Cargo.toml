@@ -1,10 +1,14 @@
 [package]
 name = "xrw"
 version = "0.0.2"
-edition = "2024"
-description = "A general editor for structured binary formats."
 license = "MIT"
 repository = "https://github.com/ubmu/xrw"
+documentation = "https://docs.rs/xrw"
+description = "A library for querying structured binary formats and performing modifications."
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
 thiserror = "2.0.18"
