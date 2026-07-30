@@ -2,9 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use super::descriptor::Descriptor;
-use super::marker::Marker;
-use crate::{Byteorder, Error, Result};
+use crate::{Byteorder, Descriptor, Error, Mark, Result};
 
 pub struct Reader<R: Read + Seek> {
     inner: BufReader<R>,
@@ -19,10 +17,7 @@ impl<R: Read + Seek> Reader<R> {
     pub fn new(mut inner: R) -> Result<Self> {
         let size = inner.seek(SeekFrom::End(0))?;
         inner.seek(SeekFrom::Start(0))?;
-        Ok(Self {
-            inner: BufReader::new(inner),
-            size,
-        })
+        Ok(Self { inner: BufReader::new(inner), size })
     }
 
     pub fn size(&self) -> u64 {
@@ -126,18 +121,19 @@ impl<R: Read + Seek> Reader<R> {
     }
 
     /// Reads a FourCC block identifier.
-    pub fn read_property_code(&mut self) -> Result<[u8; 4]> {
+    pub fn read_code(&mut self) -> Result<[u8; 4]> {
         let mut buf = [0u8; 4];
         self.read_exact_buf(&mut buf)?;
         Ok(buf)
     }
 
     /// Reads a UUID block identifier.
-    pub fn read_property_uuid(&mut self) -> Result<[u8; 16]> {
+    pub fn read_uuid(&mut self) -> Result<[u8; 16]> {
         let mut buf = [0u8; 16];
         self.read_exact_buf(&mut buf)?;
         Ok(buf)
     }
+
     /// Skip padding bytes.
     pub fn skip_padding(&mut self, pad: u64) -> Result<()> {
         if pad > 0 {
@@ -165,14 +161,12 @@ impl<R: Read + Seek> Reader<R> {
         Ok(is_padding)
     }
 
-    /// Reads a block identifier marker of the width defined by the descriptor.
-    pub fn read_marker(&mut self, descriptor: &Descriptor) -> Result<Marker> {
-        match descriptor.marker_width {
-            4 => Ok(Marker::FourCC(self.read_property_code()?)),
-            16 => Ok(Marker::UUID(self.read_property_uuid()?)),
-            _ => Err(Error::UnsupportedMarkerWidth {
-                marker_width: descriptor.marker_width,
-            }),
+    /// Reads a block mark of the width defined by the descriptor.
+    pub fn read_mark(&mut self, descriptor: &Descriptor) -> Result<Mark> {
+        match descriptor.mark_width {
+            4 => Ok(Mark::Four(self.read_code()?)),
+            16 => Ok(Mark::UUID(self.read_uuid()?)),
+            width => Err(Error::Read(format!("unsupported mark width: {width}"))),
         }
     }
 
@@ -181,18 +175,19 @@ impl<R: Read + Seek> Reader<R> {
         match descriptor.size_width {
             4 => Ok(self.read_u32(descriptor.byteorder)? as u64),
             8 => Ok(self.read_u64(descriptor.byteorder)?),
-            _ => Err(Error::UnsupportedSizeWidth {
-                size_width: descriptor.size_width,
-            }),
+            width => Err(Error::Read(format!("unsupported size width: {width}"))),
         }
     }
 
     /// Reads a size field and subtracts any header overhead to return the actual payload size.
     pub fn read_payload_size(&mut self, descriptor: &Descriptor) -> Result<u64> {
         let offset = self.tell()?;
-        let size = Self::read_size(self, descriptor)?;
-        size.checked_sub(descriptor.header_overhead as u64)
-            .ok_or(Error::InvalidBlockSize { offset, size })
+        let size = self.read_size(descriptor)?;
+        size.checked_sub(descriptor.header_overhead as u64).ok_or_else(|| {
+            Error::Read(format!(
+                "chunk size {size} at offset {offset} is smaller than the format's header overhead"
+            ))
+        })
     }
 }
 
@@ -204,9 +199,7 @@ impl Reader<File> {
 
 impl<W: Write + Seek> Writer<W> {
     pub fn new(inner: W) -> Self {
-        Self {
-            inner: BufWriter::new(inner),
-        }
+        Self { inner: BufWriter::new(inner) }
     }
 
     fn write_exact(&mut self, bytes: &[u8]) -> Result<()> {
@@ -229,10 +222,10 @@ impl<W: Write + Seek> Writer<W> {
         self.write_exact(&bytes)
     }
 
-    pub fn write_marker(&mut self, marker: Marker, descriptor: &Descriptor) -> Result<()> {
-        match marker {
-            Marker::FourCC(bytes) => self.write_exact(&bytes),
-            Marker::UUID(bytes) => self.write_exact(&bytes),
+    pub fn write_mark(&mut self, mark: Mark) -> Result<()> {
+        match mark {
+            Mark::Four(bytes) => self.write_exact(&bytes),
+            Mark::UUID(bytes) => self.write_exact(&bytes),
         }
     }
 
@@ -240,9 +233,7 @@ impl<W: Write + Seek> Writer<W> {
         match descriptor.size_width {
             4 => self.write_u32(size as u32, descriptor.byteorder),
             8 => self.write_u64(size, descriptor.byteorder),
-            _ => Err(Error::UnsupportedSizeWidth {
-                size_width: descriptor.size_width,
-            }),
+            _ => unreachable!(),
         }
     }
 
@@ -262,5 +253,16 @@ impl<W: Write + Seek> Writer<W> {
 impl Writer<File> {
     pub fn create(path: impl AsRef<Path>) -> Result<Self> {
         Ok(Self::new(File::create(path)?))
+    }
+}
+
+pub trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
+pub type DynReader = Reader<Box<dyn ReadSeek>>;
+
+impl Reader<Box<dyn ReadSeek>> {
+    pub fn boxed<R: Read + Seek + 'static>(inner: R) -> Result<Self> {
+        Reader::new(Box::new(inner))
     }
 }

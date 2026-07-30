@@ -45,13 +45,7 @@ impl Ds64 {
         if table_length > 0 {
             reader.skip(table_length as u64 * 12)?;
         }
-        Ok(Self {
-            offset,
-            size,
-            riff_size,
-            data_size,
-            sample_count,
-        })
+        Ok(Self { offset, size, riff_size, data_size, sample_count })
     }
 }
 
@@ -65,3 +59,5 @@ pub struct CoreAudioHeader {
     // Flags reserved by Apple for future use. For CAF v1 files, must be set to 0.
     pub file_flags: u16,
 }
+
+// TODO: Display for Extension.
