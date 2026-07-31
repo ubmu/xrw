@@ -35,5 +35,12 @@ impl Format {
         }
     }
 
-    // TODO: detect_base_media, and Sony Wave64 moved to detect_inter as all UUIDs have the original chunk identifier as the first four bytes.
+    fn detect_base_media<R: Read + Seek>(reader: &mut Reader<R>) -> Result<Self> {
+        reader.seek(0)?;
+        reader.skip(4)?;
+        match Mark::Four(reader.read_code()?) {
+            Mark::FTYP => Ok(Self::BaseMedia),
+            _ => Err(Error::Detect(format!("blah"))),
+        }
+    }
 }
