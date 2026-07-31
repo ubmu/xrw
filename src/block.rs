@@ -1,5 +1,4 @@
 use crate::Mark;
-
 use std::fmt;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
