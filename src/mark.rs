@@ -24,6 +24,7 @@ impl Mark {
     // Would require storing the UUID equivalent as a const for writing, though.
     pub const SW64: Self = Self::Four(*b"riff");
     pub const CAFF: Self = Self::Four(*b"caff");
+    pub const FTYP: Self = Self::Four(*b"ftyp");
 }
 
 // Marks for subtypes.

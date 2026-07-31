@@ -35,7 +35,5 @@ impl Format {
         }
     }
 
-    // TODO: Sony Wave64 uses a 16-byte UUID master marker, not a 4-byte FourCC — needs
-    // its own probe reading via `read_uuid` and comparing against the Wave64 GUID.
-    // TODO: detect_base_media (ISO BMFF box scan).
+    // TODO: detect_base_media, and Sony Wave64 moved to detect_inter as all UUIDs have the original chunk identifier as the first four bytes.
 }
